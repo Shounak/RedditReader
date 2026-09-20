@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Reddit Reader · Routing test</title>
+  <style>
+    :root { color-scheme: light dark; --accent: #b33b12; --muted: #60646c; --line: #d9dce1; --surface: #f6f7f9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 17px/1.6 system-ui, -apple-system, sans-serif; background: #fff; color: #202329; }
+    main { max-width: 760px; margin: 0 auto; padding: 48px 22px; }
+    .eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+    h1 { font-size: clamp(28px, 5vw, 38px); line-height: 1.15; margin: 12px 0; }
+    h2 { font-size: 20px; margin: 0 0 16px; }
+    p { margin: 12px 0; }
+    .muted, footer { color: var(--muted); }
+    section { margin-top: 28px; padding: 22px; border: 1px solid var(--line); border-radius: 14px; }
+    dl { margin: 0; }
+    dt { color: var(--muted); font-size: 13px; margin-top: 16px; }
+    dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+    code { font: .95em ui-monospace, SFMono-Regular, monospace; }
+    #thread-id { font-size: 28px; font-weight: 650; }
+    label { display: block; font-weight: 600; margin-bottom: 8px; }
+    input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; padding: 12px; font: inherit; }
+    button { margin-top: 12px; padding: 11px 18px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    a { color: var(--accent); overflow-wrap: anywhere; }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+    #error { color: #a02121; }
+    footer { margin-top: 28px; font-size: 14px; }
+    [hidden] { display: none !important; }
+    @media (prefers-color-scheme: dark) {
+      :root { --accent: #ff9b75; --muted: #afb5bf; --line: #3a414d; --surface: #242a33; }
+      body { background: #171b22; color: #edf0f5; }
+      button { color: #171b22; }
+      #error { color: #ffb0b0; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">Reddit Reader / Step 1</div>
+    <h1>A home for your threads.</h1>
+    <p id="status" class="muted" role="status" aria-live="polite">Open a thread route to test the handoff.</p>
+    <noscript>This routing test needs JavaScript enabled.</noscript>
+
+    <section id="result" hidden aria-labelledby="result-heading">
+      <h2 id="result-heading">Thread received</h2>
+      <dl>
+        <dt>Post ID</dt>
+        <dd><code id="thread-id"></code></dd>
+        <dt>Reader address</dt>
+        <dd><code id="reader-address"></code></dd>
+        <dt>Corresponding Reddit address (not fetched)</dt>
+        <dd><code id="reddit-address"></code></dd>
+      </dl>
+    </section>
+
+    <section aria-labelledby="form-heading">
+      <h2 id="form-heading">Try a thread</h2>
+      <form id="thread-form">
+        <label for="thread-input">Reddit post URL or post ID</label>
+        <input id="thread-input" type="text" required maxlength="4096" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="abc123 or https://www.reddit.com/r/…/comments/abc123/…" aria-describedby="input-help error">
+        <p id="input-help" class="muted">Regular post links and redd.it links work. /s/ share links need to be opened on Reddit first.</p>
+        <button type="submit">Show thread ID</button>
+      </form>
+      <p id="error" role="alert" hidden></p>
+      <p>Or use an example: <a href="#/thread/abc123">abc123</a> · <a href="#/thread/xyz789">xyz789</a></p>
+    </section>
+
+    <footer>This prototype only displays the identifier. It does not fetch Reddit, load comments, use cookies, or verify that a post exists.</footer>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const status = document.getElementById("status");
+      const result = document.getElementById("result");
+      const error = document.getElementById("error");
+      const input = document.getElementById("thread-input");
+
+      function showError(message) {
+        error.textContent = message;
+        error.hidden = false;
+      }
+
+      function postIdFromInput(value) {
+        const text = value.trim();
+        const bareId = text.match(/^(?:t3_)?([a-z0-9]+)$/i);
+        if (bareId) return bareId[1].toLowerCase();
+
+        let url;
+        try {
+          url = new URL(text);
+        } catch {
+          throw new Error("Enter a post ID or a full https:// Reddit post URL.");
+        }
+        const host = url.hostname.toLowerCase();
+        const redditHost = host === "reddit.com" || host.endsWith(".reddit.com");
+        if (!/^https?:$/.test(url.protocol) || url.username || url.password || (!redditHost && host !== "redd.it")) {
+          throw new Error("Please use a reddit.com or redd.it post URL.");
+        }
+        const match = host === "redd.it"
+          ? url.pathname.match(/^\/([a-z0-9]+)\/?$/i)
+          : url.pathname.match(/^\/(?:r\/[^/]+\/|user\/[^/]+\/)?comments\/([a-z0-9]+)(?:\/|$)/i);
+        if (!match) {
+          throw new Error("No post ID found. Open a /comments/ post URL rather than a feed or /s/ share link.");
+        }
+        return match[1].toLowerCase();
+      }
+
+      function renderRoute() {
+        error.hidden = true;
+        error.textContent = "";
+        result.hidden = true;
+        document.title = "Reddit Reader · Routing test";
+        if (!location.hash || location.hash === "#/") {
+          status.textContent = "Ready. Open a #/thread/abc123 link, or paste a Reddit URL below.";
+          input.value = "";
+          return;
+        }
+
+        const match = location.hash.match(/^#\/thread\/([a-z0-9]+)\/?$/i);
+        if (!match) {
+          status.textContent = "This reader address is not valid.";
+          showError("Expected a route like #/thread/abc123.");
+          return;
+        }
+
+        const postId = match[1].toLowerCase();
+        // The entire display is derived from the URL, so reloads and separate
+        // tabs work independently. Reddit fetching/rendering can be added here.
+        document.getElementById("thread-id").textContent = postId;
+        document.getElementById("reader-address").textContent = location.href;
+        document.getElementById("reddit-address").textContent = "https://www.reddit.com/comments/" + postId + "/";
+        input.value = postId;
+        document.title = postId + " · Reddit Reader";
+        status.textContent = "Routing works. This tab received post ID " + postId + ".";
+        result.hidden = false;
+      }
+
+      document.getElementById("thread-form").addEventListener("submit", event => {
+        event.preventDefault();
+        try {
+          const hash = "#/thread/" + postIdFromInput(input.value);
+          if (location.hash === hash) renderRoute();
+          else location.hash = hash;
+        } catch (exception) {
+          showError(exception.message);
+        }
+      });
+
+      window.addEventListener("hashchange", renderRoute);
+      renderRoute();
+    })();
+  </script>
+</body>
+</html>
