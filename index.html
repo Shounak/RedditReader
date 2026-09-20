@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Reddit Reader · Routing test</title>
+  <title>Reddit Reader · Fetch test</title>
   <style>
     :root { color-scheme: light dark; --accent: #b33b12; --muted: #60646c; --line: #d9dce1; --surface: #f6f7f9; }
     * { box-sizing: border-box; }
@@ -24,6 +24,9 @@
     label { display: block; font-weight: 600; margin-bottom: 8px; }
     input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; padding: 12px; font: inherit; }
     button { margin-top: 12px; padding: 11px 18px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .secondary { background: var(--surface); color: inherit; border: 1px solid var(--line); }
+    pre { padding: 14px; background: var(--surface); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 ui-monospace, SFMono-Regular, monospace; }
     a { color: var(--accent); overflow-wrap: anywhere; }
     :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
     #error { color: #a02121; }
@@ -39,10 +42,10 @@
 </head>
 <body>
   <main>
-    <div class="eyebrow">Reddit Reader / Step One</div>
+    <div class="eyebrow">Reddit Reader / Step 2 · Fetch test v1</div>
     <h1>A home for your threads.</h1>
     <p id="status" class="muted" role="status" aria-live="polite">Open a thread route to test the handoff.</p>
-    <noscript>This routing test needs JavaScript enabled.</noscript>
+    <noscript>This fetch test needs JavaScript enabled.</noscript>
 
     <section id="result" hidden aria-labelledby="result-heading">
       <h2 id="result-heading">Thread received</h2>
@@ -51,9 +54,25 @@
         <dd><code id="thread-id"></code></dd>
         <dt>Reader address</dt>
         <dd><code id="reader-address"></code></dd>
-        <dt>Corresponding Reddit address (not fetched)</dt>
+        <dt>Corresponding Reddit address</dt>
         <dd><code id="reddit-address"></code></dd>
       </dl>
+    </section>
+
+    <section id="fetch-panel" hidden aria-labelledby="fetch-heading">
+      <h2 id="fetch-heading">Test Reddit JSON access</h2>
+      <label for="fetch-source">Reddit post URL to test</label>
+      <input id="fetch-source" type="url" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="fetch-help">
+      <p id="fetch-help" class="muted">You can paste the original full post URL here to compare it with the short /comments/ address. It must identify the thread above.</p>
+      <button id="fetch-anonymous" type="button">Test without cookies</button>
+      <button id="fetch-cookies" type="button" class="secondary">Test browser cookies</button>
+      <p class="muted">The second test asks the browser to include existing Reddit cookies where permitted. It cannot set a loid cookie or confirm which cookies were sent.</p>
+      <p id="fetch-status" role="status" aria-live="polite">Ready. Choose a test; nothing is fetched automatically.</p>
+      <pre id="diagnostics" hidden aria-label="Fetch diagnostics"></pre>
+      <details id="preview-panel" hidden>
+        <summary>Response preview (first 800 characters)</summary>
+        <pre id="response-preview"></pre>
+      </details>
     </section>
 
     <section aria-labelledby="form-heading">
@@ -65,10 +84,10 @@
         <button type="submit">Show thread ID</button>
       </form>
       <p id="error" role="alert" hidden></p>
-      <p>Or use an example: <a href="#/thread/abc123">abc123</a> · <a href="#/thread/xyz789">xyz789</a></p>
+      <p>Try your NFLv2 example: <a href="#/thread/1ujqpq5">1ujqpq5</a>.</p>
     </section>
 
-    <footer>This prototype only displays the identifier. It does not fetch Reddit, load comments, use cookies, or verify that a post exists.</footer>
+    <footer>Each test makes one browser fetch (plus any browser-managed redirects). No proxy, automatic retries, or thread rendering. A generic network error alone cannot distinguish CORS, Screen Time, a content blocker, or a connection failure.</footer>
   </main>
 
   <script>
@@ -79,6 +98,174 @@
       const result = document.getElementById("result");
       const error = document.getElementById("error");
       const input = document.getElementById("thread-input");
+      const fetchPanel = document.getElementById("fetch-panel");
+      const fetchSource = document.getElementById("fetch-source");
+      const anonymousButton = document.getElementById("fetch-anonymous");
+      const cookiesButton = document.getElementById("fetch-cookies");
+      const fetchStatus = document.getElementById("fetch-status");
+      const diagnostics = document.getElementById("diagnostics");
+      const previewPanel = document.getElementById("preview-panel");
+      const preview = document.getElementById("response-preview");
+      let currentPostId = null;
+      let runNumber = 0;
+      let activeRequest = null;
+
+      // Keep the user's URL conversion, including the original query settings.
+      function makeJsonUrl(pageUrl) {
+        var u = new URL(pageUrl);
+        u.hash = "";
+        u.search = "";
+        var path = u.pathname.replace(/\/+$/, "");
+        if (!/\.json$/i.test(path)) path += ".json";
+        u.pathname = path;
+        u.search = "limit=500&raw_json=1";
+        return u.toString();
+      }
+
+      function resetFetch() {
+        runNumber += 1;
+        if (activeRequest) activeRequest.abort();
+        activeRequest = null;
+        currentPostId = null;
+        anonymousButton.disabled = false;
+        cookiesButton.disabled = false;
+        fetchPanel.hidden = true;
+        diagnostics.hidden = true;
+        diagnostics.textContent = "";
+        previewPanel.hidden = true;
+        preview.textContent = "";
+        fetchStatus.textContent = "Ready. Choose a test; nothing is fetched automatically.";
+      }
+
+      async function testFetch(credentials) {
+        if (activeRequest || !currentPostId) return;
+        let apiUrl;
+        try {
+          const source = fetchSource.value.trim();
+          if (postIdFromInput(source) !== currentPostId) {
+            throw new Error("This URL identifies a different post. Select that post using Try a thread first.");
+          }
+          let url = new URL(source);
+          if (url.hostname === "redd.it") {
+            url = new URL("https://www.reddit.com/comments/" + currentPostId + "/");
+          }
+          // Never downgrade to HTTP from the HTTPS-hosted reader.
+          url.protocol = "https:";
+          apiUrl = makeJsonUrl(url.href);
+        } catch (exception) {
+          fetchStatus.textContent = "Invalid test URL: " + exception.message;
+          return;
+        }
+
+        const thisRun = ++runNumber;
+        const expectedPostId = currentPostId;
+        const controller = new AbortController();
+        activeRequest = controller;
+        let timedOut = false;
+        let responseReceived = false;
+        const started = performance.now();
+        const timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, 20000);
+        const lines = [
+          "Reader origin: " + location.origin,
+          "Request: " + apiUrl,
+          "Method: GET; mode: cors; credentials: " + credentials,
+          "Header: Accept: application/json",
+          "No manual Cookie, Referer, or User-Agent header."
+        ];
+        anonymousButton.disabled = true;
+        cookiesButton.disabled = true;
+        diagnostics.hidden = false;
+        diagnostics.textContent = lines.join("\n");
+        previewPanel.hidden = true;
+        preview.textContent = "";
+        fetchStatus.textContent = "Fetching Reddit JSON… (20-second timeout)";
+
+        function report(message) {
+          if (thisRun !== runNumber) return;
+          fetchStatus.textContent = message;
+          diagnostics.textContent = lines.concat(
+            "Elapsed: " + ((performance.now() - started) / 1000).toFixed(2) + " s"
+          ).join("\n");
+        }
+
+        try {
+          const response = await fetch(apiUrl, {
+            method: "GET",
+            mode: "cors",
+            credentials,
+            headers: { Accept: "application/json" },
+            referrerPolicy: "no-referrer",
+            signal: controller.signal
+          });
+          if (thisRun !== runNumber) return;
+          responseReceived = true;
+          lines.push(
+            "HTTP: " + response.status + " " + response.statusText,
+            "Response type: " + response.type,
+            "Final URL: " + response.url,
+            "Redirected: " + response.redirected,
+            "Content-Type: " + (response.headers.get("content-type") || "not provided")
+          );
+          // CORS-blocked replies reject fetch; they do not expose their HTTP
+          // status or body here. Do not report a generic failure as HTTP 403.
+          const text = await response.text();
+          if (thisRun !== runNumber) return;
+          lines.push("Response length: " + text.length + " characters");
+          preview.textContent = text.slice(0, 800);
+          previewPanel.hidden = false;
+          if (!response.ok) {
+            report("HTTP " + response.status + ": Reddit returned a readable error response.");
+            return;
+          }
+
+          let json;
+          try {
+            json = JSON.parse(text);
+          } catch {
+            report("Response readable, but not valid JSON. See the response preview.");
+            return;
+          }
+          const post = Array.isArray(json) ? json[0]?.data?.children?.[0]?.data : null;
+          const comments = Array.isArray(json) ? json[1]?.data?.children : null;
+          if (!post || typeof post.title !== "string" || !Array.isArray(comments)) {
+            report("JSON readable, but it is not the expected Reddit post/comments response.");
+            return;
+          }
+          if (post.id !== expectedPostId) {
+            report("JSON readable, but the returned post ID does not match the requested thread.");
+            return;
+          }
+          lines.push(
+            "Post ID: " + post.id,
+            "Title: " + post.title,
+            "Subreddit: " + (post.subreddit_name_prefixed || post.subreddit || "unknown"),
+            "Reported total comments: " + (post.num_comments ?? "unknown"),
+            "Top-level comment objects returned: " + comments.filter(item => item?.kind === "t1").length
+          );
+          report("Success — Reddit JSON is readable from this page.");
+        } catch (exception) {
+          if (thisRun !== runNumber) return;
+          lines.push("Error: " + exception.name + ": " + exception.message);
+          if (timedOut) {
+            report("Timed out after 20 seconds. This does not establish whether CORS is the cause.");
+          } else if (responseReceived) {
+            report("Response headers arrived, but reading or processing the body failed.");
+          } else {
+            lines.push("No response status/body was exposed to JavaScript.");
+            report("Fetch failed — could be CORS, Screen Time, a content blocker, or a network/TLS error. Check the browser console for details.");
+          }
+        } finally {
+          clearTimeout(timer);
+          if (thisRun === runNumber) {
+            activeRequest = null;
+            anonymousButton.disabled = false;
+            cookiesButton.disabled = false;
+          }
+        }
+      }
 
       function showError(message) {
         error.textContent = message;
@@ -101,9 +288,10 @@
         if (!/^https?:$/.test(url.protocol) || url.username || url.password || (!redditHost && host !== "redd.it")) {
           throw new Error("Please use a reddit.com or redd.it post URL.");
         }
+        const pathname = url.pathname.replace(/\.json\/?$/i, "");
         const match = host === "redd.it"
           ? url.pathname.match(/^\/([a-z0-9]+)\/?$/i)
-          : url.pathname.match(/^\/(?:r\/[^/]+\/|user\/[^/]+\/)?comments\/([a-z0-9]+)(?:\/|$)/i);
+          : pathname.match(/^\/(?:r\/[^/]+\/|user\/[^/]+\/)?comments\/([a-z0-9]+)(?:\/|$)/i);
         if (!match) {
           throw new Error("No post ID found. Open a /comments/ post URL rather than a feed or /s/ share link.");
         }
@@ -111,10 +299,11 @@
       }
 
       function renderRoute() {
+        resetFetch();
         error.hidden = true;
         error.textContent = "";
         result.hidden = true;
-        document.title = "Reddit Reader · Routing test";
+        document.title = "Reddit Reader · Fetch test";
         if (!location.hash || location.hash === "#/") {
           status.textContent = "Ready. Open a #/thread/abc123 link, or paste a Reddit URL below.";
           input.value = "";
@@ -129,12 +318,14 @@
         }
 
         const postId = match[1].toLowerCase();
-        // The entire display is derived from the URL, so reloads and separate
-        // tabs work independently. Reddit fetching/rendering can be added here.
+        // Each tab's selected thread still comes from its own URL.
         document.getElementById("thread-id").textContent = postId;
         document.getElementById("reader-address").textContent = location.href;
         document.getElementById("reddit-address").textContent = "https://www.reddit.com/comments/" + postId + "/";
         input.value = postId;
+        currentPostId = postId;
+        fetchSource.value = "https://www.reddit.com/comments/" + postId + "/";
+        fetchPanel.hidden = false;
         document.title = postId + " · Reddit Reader";
         status.textContent = "Routing works. This tab received post ID " + postId + ".";
         result.hidden = false;
@@ -152,6 +343,8 @@
       });
 
       window.addEventListener("hashchange", renderRoute);
+      anonymousButton.addEventListener("click", () => testFetch("omit"));
+      cookiesButton.addEventListener("click", () => testFetch("include"));
       renderRoute();
     })();
   </script>
