@@ -116,7 +116,7 @@
         u.hash = "";
         u.search = "";
         var path = u.pathname.replace(/\/+$/, "");
-        if (!/\.json$/i.test(path)) path += ".json";
+        // if (!/\.json$/i.test(path)) path += ".json";
         u.pathname = path;
         u.search = "limit=500&raw_json=1";
         return u.toString();
