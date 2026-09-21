@@ -1,352 +1,220 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="referrer" content="no-referrer">
-  <title>Reddit Reader · Fetch test</title>
-  <style>
-    :root { color-scheme: light dark; --accent: #b33b12; --muted: #60646c; --line: #d9dce1; --surface: #f6f7f9; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font: 17px/1.6 system-ui, -apple-system, sans-serif; background: #fff; color: #202329; }
-    main { max-width: 760px; margin: 0 auto; padding: 48px 22px; }
-    .eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
-    h1 { font-size: clamp(28px, 5vw, 38px); line-height: 1.15; margin: 12px 0; }
-    h2 { font-size: 20px; margin: 0 0 16px; }
-    p { margin: 12px 0; }
-    .muted, footer { color: var(--muted); }
-    section { margin-top: 28px; padding: 22px; border: 1px solid var(--line); border-radius: 14px; }
-    dl { margin: 0; }
-    dt { color: var(--muted); font-size: 13px; margin-top: 16px; }
-    dd { margin: 3px 0 0; overflow-wrap: anywhere; }
-    code { font: .95em ui-monospace, SFMono-Regular, monospace; }
-    #thread-id { font-size: 28px; font-weight: 650; }
-    label { display: block; font-weight: 600; margin-bottom: 8px; }
-    input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; padding: 12px; font: inherit; }
-    button { margin-top: 12px; padding: 11px 18px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-    button:disabled { opacity: .5; cursor: wait; }
-    .secondary { background: var(--surface); color: inherit; border: 1px solid var(--line); }
-    pre { padding: 14px; background: var(--surface); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 ui-monospace, SFMono-Regular, monospace; }
-    a { color: var(--accent); overflow-wrap: anywhere; }
-    :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-    #error { color: #a02121; }
-    footer { margin-top: 28px; font-size: 14px; }
-    [hidden] { display: none !important; }
-    @media (prefers-color-scheme: dark) {
-      :root { --accent: #ff9b75; --muted: #afb5bf; --line: #3a414d; --surface: #242a33; }
-      body { background: #171b22; color: #edf0f5; }
-      button { color: #171b22; }
-      #error { color: #ffb0b0; }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Reddit Reader</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#202329;--muted:#626974;--line:#d9dce1;--accent:#a83513;--surface:#f5f6f8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.5 system-ui,-apple-system,sans-serif}main{max-width:800px;margin:auto;padding:24px 18px 60px}header{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--muted)}a{color:var(--accent);overflow-wrap:anywhere}h1{font-size:1.45rem;line-height:1.25}h2{font-size:1.15rem}#status,.meta{color:var(--muted);font-size:.85rem}#status{overflow-wrap:anywhere}.comment{border-left:3px solid var(--line);padding-left:10px;margin-top:16px}.meta{margin-bottom:5px}.body{overflow-wrap:anywhere}.body p{margin:.5em 0}.body pre{overflow:auto;background:var(--surface);padding:10px;border-radius:6px}.body code{font-family:ui-monospace,monospace;background:var(--surface)}.body blockquote{margin:.5em 0;padding-left:12px;border-left:3px solid var(--line)}.body table{display:block;overflow:auto}.body th,.body td{padding:5px;border:1px solid var(--line)}.plain{white-space:pre-wrap}hr{border:0;border-top:1px solid var(--line);margin:24px 0}.saved{padding:12px 0;border-bottom:1px solid var(--line)}[hidden]{display:none!important}:focus-visible{outline:3px solid var(--accent)}
+@media(prefers-color-scheme:dark){:root{--bg:#171b22;--fg:#edf0f5;--muted:#afb5bf;--line:#3a414d;--accent:#ff9b75;--surface:#242a33}}
+</style>
+<main>
+<header><a href="#/">Reddit Reader</a><span>Shortcut import · v2</span></header>
+<p id="status" role="status" aria-live="polite">Loading…</p>
+<article id="thread"></article>
+<section id="saved" hidden><h1>Saved threads</h1><p>Share a Reddit post from Safari to your Reddit Reader Shortcut to import it here.</p><p id="usage"></p><div id="saved-list"></div></section>
+<noscript>Enable JavaScript to display saved threads.</noscript>
+</main>
+<script>
+(() => {
+'use strict';
+const BUDGET = 100 * 1000 * 1000; // Stored UTF-8 JSON bytes; excludes database overhead.
+const MAX_COMMENTS = 800;
+const $ = id => document.getElementById(id);
+let dbPromise, generation = 0, currentId = null;
+function database() {
+  if (!dbPromise) dbPromise = new Promise((resolve, reject) => {
+    const r = indexedDB.open('reddit-reader-import-v1', 1);
+    r.onupgradeneeded = () => {
+      r.result.createObjectStore('threads', {keyPath:'id'});
+      r.result.createObjectStore('meta', {keyPath:'id'});
+    };
+    r.onerror = () => reject(r.error);
+    r.onblocked = () => reject(new Error('Close other reader tabs and try again.'));
+    r.onsuccess = () => { r.result.onversionchange = () => r.result.close(); resolve(r.result); };
+  }).catch(e => { dbPromise = null; throw e; });
+  return dbPromise;
+}
+function finished(tx) {
+  return new Promise((resolve,reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted.'));
+    tx.onerror = () => {}; // Abort handler reports failure, never reports an early success.
+  });
+}
+async function saveThread(id, title, json) {
+  const bytes = new Blob([json]).size;
+  if (bytes > BUDGET) throw new Error('This thread exceeds the 100 MB cache budget.');
+  const db = await database();
+  const tx = db.transaction(['threads','meta'], 'readwrite');
+  const done = finished(tx), data = tx.objectStore('threads'), meta = tx.objectStore('meta');
+  // One transaction serializes imports across tabs and commits eviction + replacement atomically.
+  const r = meta.getAll();
+  r.onsuccess = () => {
+    const others = r.result.filter(x => x.id !== id).sort((a,b) => a.lastRead-b.lastRead);
+    let total = bytes + others.reduce((n,x) => n+x.bytes,0);
+    for (const x of others) {
+      if (total <= BUDGET) break;
+      data.delete(x.id); meta.delete(x.id); total -= x.bytes;
     }
-  </style>
-</head>
-<body>
-  <main>
-    <div class="eyebrow">Reddit Reader / Step 2 · Fetch test v1</div>
-    <h1>A home for your threads.</h1>
-    <p id="status" class="muted" role="status" aria-live="polite">Open a thread route to test the handoff.</p>
-    <noscript>This fetch test needs JavaScript enabled.</noscript>
-
-    <section id="result" hidden aria-labelledby="result-heading">
-      <h2 id="result-heading">Thread received</h2>
-      <dl>
-        <dt>Post ID</dt>
-        <dd><code id="thread-id"></code></dd>
-        <dt>Reader address</dt>
-        <dd><code id="reader-address"></code></dd>
-        <dt>Corresponding Reddit address</dt>
-        <dd><code id="reddit-address"></code></dd>
-      </dl>
-    </section>
-
-    <section id="fetch-panel" hidden aria-labelledby="fetch-heading">
-      <h2 id="fetch-heading">Test Reddit JSON access</h2>
-      <label for="fetch-source">Reddit post URL to test</label>
-      <input id="fetch-source" type="url" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="fetch-help">
-      <p id="fetch-help" class="muted">You can paste the original full post URL here to compare it with the short /comments/ address. It must identify the thread above.</p>
-      <button id="fetch-anonymous" type="button">Test without cookies</button>
-      <button id="fetch-cookies" type="button" class="secondary">Test browser cookies</button>
-      <p class="muted">The second test asks the browser to include existing Reddit cookies where permitted. It cannot set a loid cookie or confirm which cookies were sent.</p>
-      <p id="fetch-status" role="status" aria-live="polite">Ready. Choose a test; nothing is fetched automatically.</p>
-      <pre id="diagnostics" hidden aria-label="Fetch diagnostics"></pre>
-      <details id="preview-panel" hidden>
-        <summary>Response preview (first 800 characters)</summary>
-        <pre id="response-preview"></pre>
-      </details>
-    </section>
-
-    <section aria-labelledby="form-heading">
-      <h2 id="form-heading">Try a thread</h2>
-      <form id="thread-form">
-        <label for="thread-input">Reddit post URL or post ID</label>
-        <input id="thread-input" type="text" required maxlength="4096" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="abc123 or https://www.reddit.com/r/…/comments/abc123/…" aria-describedby="input-help error">
-        <p id="input-help" class="muted">Regular post links and redd.it links work. /s/ share links need to be opened on Reddit first.</p>
-        <button type="submit">Show thread ID</button>
-      </form>
-      <p id="error" role="alert" hidden></p>
-      <p>Try your NFLv2 example: <a href="#/thread/1ujqpq5">1ujqpq5</a>.</p>
-    </section>
-
-    <footer>Each test makes one browser fetch (plus any browser-managed redirects). No proxy, automatic retries, or thread rendering. A generic network error alone cannot distinguish CORS, Screen Time, a content blocker, or a connection failure.</footer>
-  </main>
-
-  <script>
-    (() => {
-      "use strict";
-
-      const status = document.getElementById("status");
-      const result = document.getElementById("result");
-      const error = document.getElementById("error");
-      const input = document.getElementById("thread-input");
-      const fetchPanel = document.getElementById("fetch-panel");
-      const fetchSource = document.getElementById("fetch-source");
-      const anonymousButton = document.getElementById("fetch-anonymous");
-      const cookiesButton = document.getElementById("fetch-cookies");
-      const fetchStatus = document.getElementById("fetch-status");
-      const diagnostics = document.getElementById("diagnostics");
-      const previewPanel = document.getElementById("preview-panel");
-      const preview = document.getElementById("response-preview");
-      let currentPostId = null;
-      let runNumber = 0;
-      let activeRequest = null;
-
-      // Keep the user's URL conversion, including the original query settings.
-      function makeJsonUrl(pageUrl) {
-        var u = new URL(pageUrl);
-        u.hash = "";
-        u.search = "";
-        var path = u.pathname.replace(/\/+$/, "");
-        // if (!/\.json$/i.test(path)) path += ".json";
-        u.pathname = path;
-        u.search = "limit=500&raw_json=1";
-        return u.toString();
-      }
-
-      function resetFetch() {
-        runNumber += 1;
-        if (activeRequest) activeRequest.abort();
-        activeRequest = null;
-        currentPostId = null;
-        anonymousButton.disabled = false;
-        cookiesButton.disabled = false;
-        fetchPanel.hidden = true;
-        diagnostics.hidden = true;
-        diagnostics.textContent = "";
-        previewPanel.hidden = true;
-        preview.textContent = "";
-        fetchStatus.textContent = "Ready. Choose a test; nothing is fetched automatically.";
-      }
-
-      async function testFetch(credentials) {
-        if (activeRequest || !currentPostId) return;
-        let apiUrl;
+    data.put({id,json});
+    meta.put({id,title,bytes,lastRead:Date.now()});
+  };
+  await done;
+}
+async function readThread(id) {
+  const db = await database(), tx = db.transaction(['threads','meta'],'readwrite');
+  const done = finished(tx);
+  let record;
+  tx.objectStore('threads').get(id).onsuccess = e => { record = e.target.result; };
+  const meta = tx.objectStore('meta');
+  meta.get(id).onsuccess = e => {
+    const item = e.target.result;
+    if(item){ item.lastRead=Date.now(); meta.put(item); }
+  };
+  await done;
+  return record;
+}
+async function touch(id) {
+  const db = await database(), tx = db.transaction('meta','readwrite'), done = finished(tx);
+  const store = tx.objectStore('meta');
+  store.get(id).onsuccess = e => { const x=e.target.result; if(x){x.lastRead=Date.now();store.put(x);} };
+  await done;
+}
+async function allMetadata() {
+  const db = await database(), tx = db.transaction('meta'), done = finished(tx);
+  let rows=[];
+  tx.objectStore('meta').getAll().onsuccess = e => { rows=e.target.result; };
+  await done; return rows;
+}
+function decodeListing(base64) {
+  const raw=atob(base64.replace(/\s/g,''));
+  const bytes=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+  return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+}
+function validate(listings) {
+  const post=listings?.[0]?.data?.children?.[0];
+  if (!Array.isArray(listings) || post?.kind!=='t3' ||
+      !/^[a-z0-9]+$/i.test(post?.data?.id || '') || typeof post.data.title!=='string' ||
+      !Array.isArray(listings[1]?.data?.children)) {
+    throw new Error('Expected Reddit post and comment listings. Check the Shortcut’s JSON response and Base64 inputs.');
+  }
+  return post.data;
+}
+function element(tag,text,cls) {
+  const e=document.createElement(tag);
+  if(text!==undefined)e.textContent=String(text);
+  if(cls)e.className=cls;
+  return e;
+}
+const ALLOWED=new Set('P BR STRONG EM B I DEL S BLOCKQUOTE PRE CODE UL OL LI A H1 H2 H3 H4 H5 H6 HR TABLE THEAD TBODY TR TH TD SUP SUB SPAN DIV'.split(' '));
+const DROP=new Set('SCRIPT STYLE IFRAME OBJECT EMBED SVG MATH FORM INPUT BUTTON TEXTAREA SELECT LINK META BASE IMG VIDEO AUDIO SOURCE TEMPLATE'.split(' '));
+function body(html,plain) {
+  const out=element('div',undefined,'body');
+  if(!html){out.classList.add('plain');out.textContent=plain||'';return out;}
+  let source=String(html);
+  // Supports both old escaped Reddit body_html and raw_json=1 markup.
+  if(/^\s*&lt;/.test(source)) {
+    const decoder=document.createElement('textarea');decoder.innerHTML=source;source=decoder.value;
+  }
+  const template=document.createElement('template');template.innerHTML=source;
+  function copy(node,parent,depth) {
+    if(depth>100)return;
+    if(node.nodeType===3){parent.append(document.createTextNode(node.textContent));return;}
+    if(node.nodeType!==1 || DROP.has(node.tagName))return;
+    let target=parent;
+    if(ALLOWED.has(node.tagName)) {
+      target=document.createElement(node.tagName.toLowerCase());
+      if(node.tagName==='A') {
         try {
-          const source = fetchSource.value.trim();
-          if (postIdFromInput(source) !== currentPostId) {
-            throw new Error("This URL identifies a different post. Select that post using Try a thread first.");
-          }
-          let url = new URL(source);
-          if (url.hostname === "redd.it") {
-            url = new URL("https://www.reddit.com/comments/" + currentPostId + "/");
-          }
-          // Never downgrade to HTTP from the HTTPS-hosted reader.
-          url.protocol = "https:";
-          apiUrl = makeJsonUrl(url.href);
-        } catch (exception) {
-          fetchStatus.textContent = "Invalid test URL: " + exception.message;
-          return;
-        }
-
-        const thisRun = ++runNumber;
-        const expectedPostId = currentPostId;
-        const controller = new AbortController();
-        activeRequest = controller;
-        let timedOut = false;
-        let responseReceived = false;
-        const started = performance.now();
-        const timer = setTimeout(() => {
-          timedOut = true;
-          controller.abort();
-        }, 20000);
-        const lines = [
-          "Reader origin: " + location.origin,
-          "Request: " + apiUrl,
-          "Method: GET; mode: cors; credentials: " + credentials,
-          "Header: Accept: application/json",
-          "No manual Cookie, Referer, or User-Agent header."
-        ];
-        anonymousButton.disabled = true;
-        cookiesButton.disabled = true;
-        diagnostics.hidden = false;
-        diagnostics.textContent = lines.join("\n");
-        previewPanel.hidden = true;
-        preview.textContent = "";
-        fetchStatus.textContent = "Fetching Reddit JSON… (20-second timeout)";
-
-        function report(message) {
-          if (thisRun !== runNumber) return;
-          fetchStatus.textContent = message;
-          diagnostics.textContent = lines.concat(
-            "Elapsed: " + ((performance.now() - started) / 1000).toFixed(2) + " s"
-          ).join("\n");
-        }
-
-        try {
-          const response = await fetch(apiUrl, {
-            method: "GET",
-            mode: "cors",
-            credentials,
-            headers: { Accept: "application/json" },
-            referrerPolicy: "no-referrer",
-            signal: controller.signal
-          });
-          if (thisRun !== runNumber) return;
-          responseReceived = true;
-          lines.push(
-            "HTTP: " + response.status + " " + response.statusText,
-            "Response type: " + response.type,
-            "Final URL: " + response.url,
-            "Redirected: " + response.redirected,
-            "Content-Type: " + (response.headers.get("content-type") || "not provided")
-          );
-          // CORS-blocked replies reject fetch; they do not expose their HTTP
-          // status or body here. Do not report a generic failure as HTTP 403.
-          const text = await response.text();
-          if (thisRun !== runNumber) return;
-          lines.push("Response length: " + text.length + " characters");
-          preview.textContent = text.slice(0, 800);
-          previewPanel.hidden = false;
-          if (!response.ok) {
-            report("HTTP " + response.status + ": Reddit returned a readable error response.");
-            return;
-          }
-
-          let json;
-          try {
-            json = JSON.parse(text);
-          } catch {
-            report("Response readable, but not valid JSON. See the response preview.");
-            return;
-          }
-          const post = Array.isArray(json) ? json[0]?.data?.children?.[0]?.data : null;
-          const comments = Array.isArray(json) ? json[1]?.data?.children : null;
-          if (!post || typeof post.title !== "string" || !Array.isArray(comments)) {
-            report("JSON readable, but it is not the expected Reddit post/comments response.");
-            return;
-          }
-          if (post.id !== expectedPostId) {
-            report("JSON readable, but the returned post ID does not match the requested thread.");
-            return;
-          }
-          lines.push(
-            "Post ID: " + post.id,
-            "Title: " + post.title,
-            "Subreddit: " + (post.subreddit_name_prefixed || post.subreddit || "unknown"),
-            "Reported total comments: " + (post.num_comments ?? "unknown"),
-            "Top-level comment objects returned: " + comments.filter(item => item?.kind === "t1").length
-          );
-          report("Success — Reddit JSON is readable from this page.");
-        } catch (exception) {
-          if (thisRun !== runNumber) return;
-          lines.push("Error: " + exception.name + ": " + exception.message);
-          if (timedOut) {
-            report("Timed out after 20 seconds. This does not establish whether CORS is the cause.");
-          } else if (responseReceived) {
-            report("Response headers arrived, but reading or processing the body failed.");
-          } else {
-            lines.push("No response status/body was exposed to JavaScript.");
-            report("Fetch failed — could be CORS, Screen Time, a content blocker, or a network/TLS error. Check the browser console for details.");
-          }
-        } finally {
-          clearTimeout(timer);
-          if (thisRun === runNumber) {
-            activeRequest = null;
-            anonymousButton.disabled = false;
-            cookiesButton.disabled = false;
-          }
-        }
+          const u=new URL(node.getAttribute('href')||'', 'https://www.reddit.com/');
+          if(['https:','http:'].includes(u.protocol)){target.href=u.href;target.rel='noreferrer noopener';}
+        }catch{}
       }
-
-      function showError(message) {
-        error.textContent = message;
-        error.hidden = false;
+      parent.append(target);
+    }
+    for(const child of node.childNodes)copy(child,target,depth+1);
+  }
+  for(const child of template.content.childNodes)copy(child,out,0);
+  return out;
+}
+function age(seconds) {
+  if(!Number.isFinite(Number(seconds)) || !seconds)return '';
+  const diff=Math.max(0,Math.floor(Date.now()/1000-Number(seconds)));
+  for(const [unit,n] of [['year',31536000],['month',2592000],['day',86400],['hour',3600],['minute',60]]) {
+    if(diff>=n){const count=Math.floor(diff/n);return count+' '+unit+(count===1?'':'s')+' ago';}
+  }
+  return 'just now';
+}
+function metadata(d) {
+  return ['▲ '+(d.score??d.ups??''),'u/'+(d.author||'[unknown]'),age(d.created_utc||d.created)].filter(Boolean).join(' · ');
+}
+function render(listings) {
+  const post=validate(listings), root=$('thread');root.replaceChildren();
+  document.title=post.title+' · Reddit Reader';
+  root.append(element('h1',post.title),element('p',(post.subreddit_name_prefixed||'')+' · '+metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),body(post.selftext_html,post.selftext||post.url||''),element('hr'),element('h2','Comments'));
+  const stack=listings[1].data.children.slice().reverse().map(item=>({item,depth:0}));
+  let count=0,omitted=false;
+  while(stack.length && count<MAX_COMMENTS) {
+    const {item,depth}=stack.pop();
+    if(item?.kind==='more'){omitted=true;continue;}
+    if(item?.kind!=='t1')continue;
+    const d=item.data||{}, c=element('div',undefined,'comment');
+    c.style.marginLeft=Math.min(depth*14,84)+'px';
+    c.append(element('div',metadata(d),'meta'),body(d.body_html,d.body));root.append(c);count++;
+    const replies=d.replies?.data?.children;
+    if(Array.isArray(replies))for(let i=replies.length-1;i>=0;i--)stack.push({item:replies[i],depth:depth+1});
+  }
+  if(!count)root.append(element('p','No comments in this snapshot.'));
+  if(stack.length)root.append(element('p','Showing the first '+MAX_COMMENTS+' comments.','meta'));
+  else if(omitted)root.append(element('p','Some comments were not included in Reddit’s response.','meta'));
+}
+async function route() {
+  const run=++generation, hash=location.hash;currentId=null;
+  $('thread').replaceChildren();$('saved').hidden=true;document.title='Reddit Reader';
+  $('status').textContent='Loading…';
+  try {
+    if(hash.startsWith('#/import/')) {
+      const parts=hash.slice('#/import/'.length).split('.');
+      if(parts.length!==2)throw new Error('Import needs PostData.Comments: two Base64 values separated by one period.');
+      const listings=parts.map(decodeListing), post=validate(listings);
+      render(listings);currentId=post.id.toLowerCase();
+      $('status').textContent='Saving thread…';
+      try {
+        await saveThread(currentId,post.title,JSON.stringify(listings));
+      }catch(e){
+        if(run===generation)$('status').textContent='Not saved: '+e.message+' The full import URL has been kept so this tab can reload.';
+        return;
       }
-
-      function postIdFromInput(value) {
-        const text = value.trim();
-        const bareId = text.match(/^(?:t3_)?([a-z0-9]+)$/i);
-        if (bareId) return bareId[1].toLowerCase();
-
-        let url;
-        try {
-          url = new URL(text);
-        } catch {
-          throw new Error("Enter a post ID or a full https:// Reddit post URL.");
-        }
-        const host = url.hostname.toLowerCase();
-        const redditHost = host === "reddit.com" || host.endsWith(".reddit.com");
-        if (!/^https?:$/.test(url.protocol) || url.username || url.password || (!redditHost && host !== "redd.it")) {
-          throw new Error("Please use a reddit.com or redd.it post URL.");
-        }
-        const pathname = url.pathname.replace(/\.json\/?$/i, "");
-        const match = host === "redd.it"
-          ? url.pathname.match(/^\/([a-z0-9]+)\/?$/i)
-          : pathname.match(/^\/(?:r\/[^/]+\/|user\/[^/]+\/)?comments\/([a-z0-9]+)(?:\/|$)/i);
-        if (!match) {
-          throw new Error("No post ID found. Open a /comments/ post URL rather than a feed or /s/ share link.");
-        }
-        return match[1].toLowerCase();
+      if(run!==generation)return;
+      // Only replace URL after the transaction's complete event.
+      try {history.replaceState(null,'','#/thread/'+currentId);}catch{}
+      $('status').textContent='Saved on this device. Run the Shortcut again for updated comments.';
+    } else if(/^#\/thread\/[a-z0-9]+\/?$/i.test(hash)) {
+      const id=hash.split('/')[2].toLowerCase(), record=await readThread(id);
+      if(run!==generation)return;
+      if(!record)throw new Error('This thread is not saved on this device, or was removed. Run the Shortcut from its Reddit page to restore it.');
+      const listings=JSON.parse(record.json);
+      if(validate(listings).id.toLowerCase()!==id)throw new Error('Saved thread ID mismatch. Please import it again.');
+      render(listings);currentId=id;$('status').textContent='Saved snapshot · Run the Shortcut again for updated comments.';
+    } else if(!hash || hash==='#/') {
+      const rows=await allMetadata();if(run!==generation)return;
+      $('saved').hidden=false;$('saved-list').replaceChildren();
+      $('usage').textContent=(rows.reduce((n,x)=>n+x.bytes,0)/1e6).toFixed(1)+' MB / 100 MB of thread data · '+rows.length+' saved threads';
+      for(const row of rows.sort((a,b)=>b.lastRead-a.lastRead)) {
+        const box=element('div',undefined,'saved'),link=element('a',row.title);link.href='#/thread/'+row.id;box.append(link);$('saved-list').append(box);
       }
-
-      function renderRoute() {
-        resetFetch();
-        error.hidden = true;
-        error.textContent = "";
-        result.hidden = true;
-        document.title = "Reddit Reader · Fetch test";
-        if (!location.hash || location.hash === "#/") {
-          status.textContent = "Ready. Open a #/thread/abc123 link, or paste a Reddit URL below.";
-          input.value = "";
-          return;
-        }
-
-        const match = location.hash.match(/^#\/thread\/([a-z0-9]+)\/?$/i);
-        if (!match) {
-          status.textContent = "This reader address is not valid.";
-          showError("Expected a route like #/thread/abc123.");
-          return;
-        }
-
-        const postId = match[1].toLowerCase();
-        // Each tab's selected thread still comes from its own URL.
-        document.getElementById("thread-id").textContent = postId;
-        document.getElementById("reader-address").textContent = location.href;
-        document.getElementById("reddit-address").textContent = "https://www.reddit.com/comments/" + postId + "/";
-        input.value = postId;
-        currentPostId = postId;
-        fetchSource.value = "https://www.reddit.com/comments/" + postId + "/";
-        fetchPanel.hidden = false;
-        document.title = postId + " · Reddit Reader";
-        status.textContent = "Routing works. This tab received post ID " + postId + ".";
-        result.hidden = false;
-      }
-
-      document.getElementById("thread-form").addEventListener("submit", event => {
-        event.preventDefault();
-        try {
-          const hash = "#/thread/" + postIdFromInput(input.value);
-          if (location.hash === hash) renderRoute();
-          else location.hash = hash;
-        } catch (exception) {
-          showError(exception.message);
-        }
-      });
-
-      window.addEventListener("hashchange", renderRoute);
-      anonymousButton.addEventListener("click", () => testFetch("omit"));
-      cookiesButton.addEventListener("click", () => testFetch("include"));
-      renderRoute();
-    })();
-  </script>
-</body>
+      $('status').textContent='Older, least recently read threads are removed when the cache fills.';
+    } else throw new Error('Unknown reader address. Use the Shortcut to import a Reddit thread.');
+  }catch(e){if(run===generation)$('status').textContent=e.message;}
+}
+window.addEventListener('hashchange',route);
+window.addEventListener('pageshow',e=>{if(e.persisted && currentId)touch(currentId).catch(()=>{});});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible' && currentId)touch(currentId).catch(()=>{});});
+route();
+})();
+</script>
 </html>
