@@ -20,7 +20,7 @@
 <script>
 (() => {
 'use strict';
-const BUDGET = 10 * 1000 * 1000; // Stored UTF-8 JSON bytes; excludes database overhead.
+const BUDGET = 20 * 1000 * 1000; // Stored UTF-8 JSON bytes; excludes database overhead.
 const MAX_COMMENTS = 800;
 const $ = id => document.getElementById(id);
 let dbPromise, generation = 0, currentId = null;
@@ -46,7 +46,7 @@ function finished(tx) {
 }
 async function saveThread(id, title, json) {
   const bytes = new Blob([json]).size;
-  if (bytes > BUDGET) throw new Error('This thread exceeds the 100 MB cache budget.');
+  if (bytes > BUDGET) throw new Error('This thread exceeds the 20 MB cache budget.');
   const db = await database();
   const tx = db.transaction(['threads','meta'], 'readwrite');
   const done = finished(tx), data = tx.objectStore('threads'), meta = tx.objectStore('meta');
@@ -156,10 +156,15 @@ function render(listings) {
   const post=validate(listings), root=$('thread');root.replaceChildren();
   document.title=post.title+' · Reddit Reader';
   root.append(
-    element('p',post.subreddit_name_prefixed||''),
+    // element('p',post.subreddit_name_prefixed||''),
     element('h1',post.title),element('p',metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),
     body(post.selftext_html,post.selftext||'<a href="post.url">post.url</a>'||''),
-    element('hr'),element('h2','Comments'));
+    element('hr'),
+    element('p',post.selftext_html),
+    element('p',post.selftext),
+    element('p',post.url),
+    element('hr'),
+    element('h2','Comments'));
   if(post.subreddit_name_prefixed){$('status').textContent=post.subreddit_name_prefixed;}
   const stack=listings[1].data.children.slice().reverse().map(item=>({item,depth:0}));
   let count=0,omitted=false;
@@ -208,7 +213,7 @@ async function route() {
     } else if(!hash || hash==='#/') {
       const rows=await allMetadata();if(run!==generation)return;
       $('saved').hidden=false;$('saved-list').replaceChildren();
-      $('usage').textContent=(rows.reduce((n,x)=>n+x.bytes,0)/1e6).toFixed(1)+' MB / 10 MB of thread data · '+rows.length+' cached posts';
+      $('usage').textContent=(rows.reduce((n,x)=>n+x.bytes,0)/1e6).toFixed(1)+' MB / 20 MB of thread data · '+rows.length+' cached posts';
       for(const row of rows.sort((a,b)=>b.lastRead-a.lastRead)) {
         const box=element('div',undefined,'saved'),link=element('a',row.title);link.href='#/thread/'+row.id;box.append(link);$('saved-list').append(box);
       }
