@@ -11,16 +11,16 @@
 @media(prefers-color-scheme:dark){:root{--bg:#171b22;--fg:#edf0f5;--muted:#afb5bf;--line:#3a414d;--accent:#ff9b75;--surface:#242a33}}
 </style>
 <main>
-<header><a href="#/">Reddit Reader</a><span>Shortcut import · v2</span></header>
+<header><a href="#/">Reddit Reader Home</a></header>
 <p id="status" role="status" aria-live="polite">Loading…</p>
 <article id="thread"></article>
-<section id="saved" hidden><h1>Saved threads</h1><p>Share a Reddit post from Safari to your Reddit Reader Shortcut to import it here.</p><p id="usage"></p><div id="saved-list"></div></section>
-<noscript>Enable JavaScript to display saved threads.</noscript>
+<section id="saved" hidden><h1>Cached posts</h1><p>Most recently viewed posts saved in Safari's cache for quick reading.</p><p id="usage"></p><div id="saved-list"></div></section>
+<noscript>Enable JavaScript to display saved posts.</noscript>
 </main>
 <script>
 (() => {
 'use strict';
-const BUDGET = 100 * 1000 * 1000; // Stored UTF-8 JSON bytes; excludes database overhead.
+const BUDGET = 10 * 1000 * 1000; // Stored UTF-8 JSON bytes; excludes database overhead.
 const MAX_COMMENTS = 800;
 const $ = id => document.getElementById(id);
 let dbPromise, generation = 0, currentId = null;
@@ -155,7 +155,12 @@ function metadata(d) {
 function render(listings) {
   const post=validate(listings), root=$('thread');root.replaceChildren();
   document.title=post.title+' · Reddit Reader';
-  root.append(element('h1',post.title),element('p',(post.subreddit_name_prefixed||'')+' · '+metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),body(post.selftext_html,post.selftext||post.url||''),element('hr'),element('h2','Comments'));
+  root.append(
+    element('p',post.subreddit_name_prefixed||''),
+    element('h1',post.title),element('p',metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),
+    body(post.selftext_html,post.selftext||'<a href="post.url">post.url</a>'||''),
+    element('hr'),element('h2','Comments'));
+  if(post.subreddit_name_prefixed){$('status').textContent=post.subreddit_name_prefixed;}
   const stack=listings[1].data.children.slice().reverse().map(item=>({item,depth:0}));
   let count=0,omitted=false;
   while(stack.length && count<MAX_COMMENTS) {
@@ -192,22 +197,22 @@ async function route() {
       if(run!==generation)return;
       // Only replace URL after the transaction's complete event.
       try {history.replaceState(null,'','#/thread/'+currentId);}catch{}
-      $('status').textContent='Saved on this device. Run the Shortcut again for updated comments.';
+      $('status').textContent='';
     } else if(/^#\/thread\/[a-z0-9]+\/?$/i.test(hash)) {
       const id=hash.split('/')[2].toLowerCase(), record=await readThread(id);
       if(run!==generation)return;
       if(!record)throw new Error('This thread is not saved on this device, or was removed. Run the Shortcut from its Reddit page to restore it.');
       const listings=JSON.parse(record.json);
       if(validate(listings).id.toLowerCase()!==id)throw new Error('Saved thread ID mismatch. Please import it again.');
-      render(listings);currentId=id;$('status').textContent='Saved snapshot · Run the Shortcut again for updated comments.';
+      render(listings);currentId=id;$('status').textContent='';
     } else if(!hash || hash==='#/') {
       const rows=await allMetadata();if(run!==generation)return;
       $('saved').hidden=false;$('saved-list').replaceChildren();
-      $('usage').textContent=(rows.reduce((n,x)=>n+x.bytes,0)/1e6).toFixed(1)+' MB / 100 MB of thread data · '+rows.length+' saved threads';
+      $('usage').textContent=(rows.reduce((n,x)=>n+x.bytes,0)/1e6).toFixed(1)+' MB / 10 MB of thread data · '+rows.length+' cached posts';
       for(const row of rows.sort((a,b)=>b.lastRead-a.lastRead)) {
         const box=element('div',undefined,'saved'),link=element('a',row.title);link.href='#/thread/'+row.id;box.append(link);$('saved-list').append(box);
       }
-      $('status').textContent='Older, least recently read threads are removed when the cache fills.';
+      $('status').textContent='Older posts are removed when the cache fills.';
     } else throw new Error('Unknown reader address. Use the Shortcut to import a Reddit thread.');
   }catch(e){if(run===generation)$('status').textContent=e.message;}
 }
