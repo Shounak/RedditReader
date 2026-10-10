@@ -164,7 +164,9 @@ function render(listings) {
     element('p',' selftext_html  ' + post.selftext_html),
     element('p',' selftext  ' + post.selftext),
     element('p',' url  ' + post.url),
-    body('combined thing  '+post.selftext_html,post.selftext)
+    element('hr'),
+    body(post.selftext_html,post.selftext)
+    element('hr'),
     element('hr'),
     element('h2','Comments'));
   const stack=listings[1].data.children.slice().reverse().map(item=>({item,depth:0}));
