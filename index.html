@@ -161,9 +161,10 @@ function render(listings) {
     element('h1',post.title),element('p',metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),
     // body(post.selftext_html,post.selftext||'<a href="post.url">post.url</a>'||''),
     element('hr'),
-    element('p',' selftext_html' + post.selftext_html),
-    element('p',' selftext' + post.selftext),
-    element('p',' url' + post.url),
+    element('p',' selftext_html  ' + post.selftext_html),
+    element('p',' selftext  ' + post.selftext),
+    element('p',' url  ' + post.url),
+    body('combined thing  '+post.selftext_html,post.selftext'')
     element('hr'),
     element('h2','Comments'));
   const stack=listings[1].data.children.slice().reverse().map(item=>({item,depth:0}));
