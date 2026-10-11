@@ -160,12 +160,12 @@ function render(listings) {
     // body(post.selftext_html,post.selftext||post.url||'')
     element('h1',post.title),element('p',metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),
     // body(post.selftext_html,post.selftext||'<a href="post.url">post.url</a>'||''),
-    element('hr'),
+    //element('hr'),
     element('p',' selftext_html  ' + post.selftext_html),
     element('p',' selftext  ' + post.selftext),
     element('p',' url  ' + post.url),
     element('hr'),
-    body(post.selftext_html,post.selftext)
+    body(post.selftext_html,post.selftext||post.url||'')
     element('hr'),
     element('hr'),
     element('h2','Comments'));
