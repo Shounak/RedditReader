@@ -162,7 +162,7 @@ function render(listings) {
   root.append(
     element('p',post.subreddit_name_prefixed||''),
     element('h1',post.title),
-    element('p',metadata(post)+'\n'+(post.num_comments??0)+' comments','meta'),
+    element('p',metadata(post)+' ·\u00A0'+(post.num_comments??0)+'\u00A0comments','meta'),
     body(post.selftext_html,post.selftext||''));
   if(post.url) {
     const paragraph=element('p'), link=element('a',post.url);
