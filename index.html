@@ -158,14 +158,21 @@ function render(listings) {
   root.append(
     // element('p',post.subreddit_name_prefixed||''),
     element('h1',post.title),element('p',metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),
-    body(post.selftext_html,post.selftext||'<a href="post.url">post.url</a>'||''),
     element('hr'),
+    element('p','selftext_html'),
     element('p',post.selftext_html),
+    element('hr'),
+    element('p','selftext'),
     element('p',post.selftext),
+    element('hr'),
+    element('p','url'),
     element('p',post.url),
     element('hr'),
+    element('p','combined thing'),
+    body(post.selftext_html,post.selftext||post.url||'')
+    element('hr'),
     element('h2','Comments'));
-  if(post.subreddit_name_prefixed){$('status').textContent=post.subreddit_name_prefixed;}
+  if(post.subreddit_name_prefixed){$('status').textContent=`status content now: ${post.subreddit_name_prefixed}`;}
   const stack=listings[1].data.children.slice().reverse().map(item=>({item,depth:0}));
   let count=0,omitted=false;
   while(stack.length && count<MAX_COMMENTS) {
