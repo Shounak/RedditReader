@@ -156,23 +156,19 @@ function render(listings) {
   const post=validate(listings), root=$('thread');root.replaceChildren();
   document.title=post.title+' · Reddit Reader';
   root.append(
-    // element('p',post.subreddit_name_prefixed||''),
-    element('h1',post.title),element('p',metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),
-    element('hr'),
-    element('p','selftext_html'),
-    element('p',post.selftext_html),
-    element('hr'),
-    element('p','selftext'),
-    element('p',post.selftext),
-    element('hr'),
-    element('p','url'),
-    element('p',post.url),
-    element('hr'),
-    element('p','combined thing'),
-    body(post.selftext_html,post.selftext||post.url||''),
-    element('hr'),
-    element('h2','Comments'));
-  if(post.subreddit_name_prefixed){$('status').textContent=`status content now: ${post.subreddit_name_prefixed}`;}
+    element('p',post.subreddit_name_prefixed||''),
+    element('h1',post.title),
+    element(metadata(post)+' · '+(post.num_comments??0)+' comments','meta'),
+    body(post.selftext_html,post.selftext||''));
+  if(post.url) {
+    const paragraph=element('p'), link=element('a',post.url);
+    try {
+      const u=new URL(post.url, 'https://www.reddit.com/');
+      if(['https:','http:'].includes(u.protocol)){link.href=u.href;link.rel='noreferrer noopener';}
+    }catch{}
+    paragraph.append(link);root.append(paragraph);
+  }
+  root.append(element('hr'),element('h2','Comments'));
   const stack=listings[1].data.children.slice().reverse().map(item=>({item,depth:0}));
   let count=0,omitted=false;
   while(stack.length && count<MAX_COMMENTS) {
