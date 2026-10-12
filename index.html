@@ -169,7 +169,7 @@ function render(listings) {
     element('p',post.url),
     element('hr'),
     element('p','combined thing'),
-    body(post.selftext_html,post.selftext||post.url||'')
+    body(post.selftext_html,post.selftext||post.url||''),
     element('hr'),
     element('h2','Comments'));
   if(post.subreddit_name_prefixed){$('status').textContent=`status content now: ${post.subreddit_name_prefixed}`;}
